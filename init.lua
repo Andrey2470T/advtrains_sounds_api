@@ -32,6 +32,7 @@ function wagon:play_sound(new_sound, replay)
 
 	self:stop_sound()
 
+	self.sound_timer = 0
 	self.cur_sound = new_sound
 	self.sound_handle = core.sound_play({
 		name=self.sounds[self.cur_sound].name},
@@ -46,7 +47,7 @@ end
 function wagon:tick_sound_timer(dtime)
 	if not self.cur_sound then return false end
 
-	self.sound_timer = self.sound_timer + dtime
+	self.sound_timer = (self.sound_timer or 0) + dtime
 
 	if self.sound_timer > self.sounds[self.cur_sound].duration then
 		self.sound_timer = 0
