@@ -7,7 +7,7 @@ end
 local SOUND_GAIN = 3.0
 local MAX_HEAR_DIST = 80
 
-local wagon = advtrains.wagon_prototypes["advtrains:wagon_placeholder"].__index
+local wagon = getmetatable(advtrains.wagon_prototypes["advtrains:wagon_placeholder"]).__index
 
 wagon.sounds = {
 	door_open = {name="advtrains_train_door_chime", duration=3},
@@ -30,6 +30,7 @@ function wagon:play_sound(new_sound, replay)
 	if not self.sounds or not self.sounds[new_sound] then return end
 	if not replay and self.cur_sound == new_sound then return end
 
+	core.debug("play_sound: " .. new_sound)
 	self:stop_sound()
 
 	self.sound_timer = 0
@@ -66,16 +67,19 @@ function wagon:handle_step_sounds(play_loop, cur_vel, old_vel, dtime)
 
 	-- Train is departing from station stop
 	if old_vel <= 0 and cur_vel > old_vel then
+		core.debug("handle_step_sounds: depart")
 		self:play_sound("depart")
 	-- Train is stopping (probably because arriving at a station stop)
 	elseif cur_vel < old_vel then
+		core.debug("handle_step_sounds: arrive")
 		self:play_sound("arrive")
 	-- Train is moving with the constant velocity
 	elseif old_vel == cur_vel and cur_vel > 0 then
+		core.debug("handle_step_sounds:" .. play_loop)
 		self:play_sound(play_loop)
 	end
 
-	-- Repeat the cycle if the current sound is not changed 
+	-- Repeat the cycle if the current sound is not changed
 	if self:tick_sound_timer(dtime) then
 		self:play_sound(self.cur_sound, true)
 	end
@@ -101,10 +105,6 @@ end
 
 local prev_on_step = wagon.on_step
 function wagon:on_step(dtime)
-    if prev_on_step then
-        prev_on_step(self, dtime)
-    end
-
     -- handle the movement, arrival and depart sounds
 	if self.sounds then
 		local play_loop = "loop_outside"
@@ -114,12 +114,19 @@ function wagon:on_step(dtime)
 			local pos = self.object:get_pos()
 			local around_objs = core.get_objects_inside_radius(pos, MAX_HEAR_DIST / 4)
 
-			if #around_objs > 0 then
-				play_loop = "loop"
+			for _, obj in ipairs(around_objs) do
+				if obj:is_player() then
+					play_loop = "loop"
+					break
+				end
 			end
 		end
 		self:handle_step_sounds(play_loop, train.velocity, self.old_velocity or 0, dtime)
 	end
+
+	if prev_on_step then
+        prev_on_step(self, dtime)
+    end
 end
 
 core.log("action", "[advtrains_sounds_api] Successfully injected custom sound API into advtrains!")
