@@ -10,14 +10,8 @@ local MAX_HEAR_DIST = 80
 local wagon = getmetatable(advtrains.wagon_prototypes["advtrains:wagon_placeholder"]).__index
 
 wagon.sounds = {
-	door_open = {
-		{name="advtrains_train_door_0", duration=3},
-		{name="advtrains_train_door_1", duration=3}
-	},
-	door_close = {
-		{name="advtrains_train_door_0", duration=3},
-		{name="advtrains_train_door_1", duration=3}
-	},
+	door_open = {{name="advtrains_train_door_open", duration=3}},
+	door_close = {{name="advtrains_train_door_close", duration=3}},
 	depart = {
 		{name="advtrains_train_depart_0", duration=9},
 		{name="advtrains_train_depart_1", duration=12}
@@ -99,42 +93,46 @@ function wagon:handle_step_sounds(pname, target_loop, cur_vel, old_vel, dtime)
 	self.player_sounds = self.player_sounds or {}
 	local current = self.player_sounds[pname]
 
-	--Train has stopped and it doesn't play the doors sounds
-	local can_be_stopped = cur_vel == 0 and current and not current.action:match("door")
-	if can_be_stopped then
-		self:stop_sound(pname)
-		return
+	if cur_vel == 0 then
+		if current and not current.action:match("door") then
+			self:stop_sound(pname)
+		end
+	else
+		-- Train is departing from station stop
+		if old_vel <= 0 and cur_vel > old_vel then
+			self:play_sound(pname, "depart")
+		-- Train is stopping (probably because arriving at a station stop)
+		elseif cur_vel < old_vel then
+			self:play_sound(pname, "arrive")
+		-- Train is moving with the constant velocity
+		elseif cur_vel == old_vel and cur_vel > 0 then
+			self:play_sound(pname, target_loop)
+		end
 	end
 
 	-- Open/close doors
-	if self.doors and (self.door_anim_timer or 0)<=0 then
+	if self.doors then
 		local train = self:train()
-		local dstate = (train.door_open or 0) * (advtrains.wagons[self.id].wagon_flipped and -1 or 1)
+		local data = advtrains.wagons[self.id]
+		local fct = data and data.wagon_flipped and -1 or 1
+		local dstate = (train.door_open or 0) * fct
+
 		if dstate ~= self.door_state then
 			if self.door_state == 0 then
 				self:play_sound(pname, "door_open")
 			else
 				self:play_sound(pname, "door_close")
 			end
-			return
 		end
-	end
-
-	-- Train is departing from station stop
-	if old_vel <= 0 and cur_vel > old_vel then
-		self:play_sound(pname, "depart")
-	-- Train is stopping (probably because arriving at a station stop)
-	elseif cur_vel < old_vel then
-		self:play_sound(pname, "arrive")
-	-- Train is moving with the constant velocity
-	elseif cur_vel == old_vel and cur_vel > 0 then
-		self:play_sound(pname, target_loop)
 	end
 
 	-- Repeat the cycle if the current sound is looped and not changed
 	if self:tick_sound_timer(pname, dtime) then
 		current = self.player_sounds[pname]
-		self:play_sound(pname, current.action, true)
+
+		if current then
+			self:play_sound(pname, current.action, true)
+		end
 	end
 end
 
@@ -164,51 +162,47 @@ function wagon:on_step(dtime)
 		local cur_vel = train and train.velocity or 0
 		local old_vel = self.old_velocity or 0
 
-		if cur_vel > 0 then
-			local pos = self.object:get_pos()
+		local pos = self.object:get_pos()
 
-			local around_objs = core.get_objects_inside_radius(pos, MAX_HEAR_DIST)
-			local active_players = {}
+		local around_objs = core.get_objects_inside_radius(pos, MAX_HEAR_DIST)
+		local active_players = {}
 
-			local data = advtrains.wagons[self.id]
-			local seats = data and data.seatp or {}
-			local passengers = {}
-			for _, pname in pairs(seats) do
-				passengers[pname] = true
-			end
+		local data = advtrains.wagons[self.id]
+		local seats = data and data.seatp or {}
+		local passengers = {}
+		for _, pname in pairs(seats) do
+			passengers[pname] = true
+		end
 
-			-- play loop_inside if the player sits, otherwise loop_outside if the distance from him to the wagon < MAX_HEAR_DIST/4, else loop
-			for _, obj in ipairs(around_objs) do
-				if obj:is_player() then
-					local pname = obj:get_player_name()
-					active_players[pname] = true
+		-- play loop_inside if the player sits, otherwise loop_outside if the distance from him to the wagon < MAX_HEAR_DIST/4, else loop
+		for _, obj in ipairs(around_objs) do
+			if obj:is_player() then
+				local pname = obj:get_player_name()
+				active_players[pname] = true
 
-					local target_loop = "loop_outside"
+				local target_loop = "loop_outside"
 
-					if passengers[pname] then
-						target_loop = "loop_inside"
-					else
-						local ppos = obj:get_pos()
-						local dist = vector.distance(pos, ppos)
-						if dist <= MAX_HEAR_DIST / 4 then
-							target_loop = "loop"
-						end
-					end
-
-					self:handle_step_sounds(pname, target_loop, cur_vel, old_vel, dtime)
-				end
-			end
-
-			-- If some player is out of MAX_HEAR_DIST, stop the sound
-			if self.player_sounds then
-				for pname, _ in pairs(self.player_sounds) do
-					if not active_players[pname] then
-						self:stop_sound(pname)
+				if passengers[pname] then
+					target_loop = "loop_inside"
+				else
+					local ppos = obj:get_pos()
+					local dist = vector.distance(pos, ppos)
+					if dist <= MAX_HEAR_DIST / 4 then
+						target_loop = "loop"
 					end
 				end
+
+				self:handle_step_sounds(pname, target_loop, cur_vel, old_vel, dtime)
 			end
-		else
-			self:stop_all_sounds()
+		end
+
+		-- If some player is out of MAX_HEAR_DIST, stop the sound
+		if self.player_sounds then
+			for pname, _ in pairs(self.player_sounds) do
+				if not active_players[pname] then
+					self:stop_sound(pname)
+				end
+			end
 		end
 	end
 
