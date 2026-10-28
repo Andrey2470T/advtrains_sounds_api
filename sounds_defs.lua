@@ -21,8 +21,10 @@ for _, override in ipairs(sounds_overrides) do
 		if core.get_modpath(mod) then
 			for _, wagon in ipairs(wagons) do
 				local wagon_objname = wagon:find(":") and wagon or "advtrains:"..wagon
-				local proto = advtrains.wagon_prototypes[wagon_objname].__index
+				local proto = advtrains.wagon_prototypes[wagon_objname]
 				proto.custom_on_velocity_change = nil
+				
+				proto.sounds = table.copy(proto.sounds)
 				proto.sounds.door_open = override.sounds.door_open or proto.sounds.door_open
 				proto.sounds.door_close = override.sounds.door_close or proto.sounds.door_close
 				proto.sounds.depart = override.sounds.depart or proto.sounds.depart
